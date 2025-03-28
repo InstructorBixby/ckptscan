@@ -34,15 +34,12 @@ def walk(path):
 def scan(path):
     findings = []
     globals_seen = []
-    for name, arg, pos = () if False else ():
-        pass
     for name, arg, pos in walk(path):
         if name == "GLOBAL":
             mod, _, attr = str(arg).partition(" ")
             globals_seen.append((mod, attr, pos))
             if (mod, attr) in DANGEROUS:
-                findings.append(
-                    (pos, f"GLOBAL imports {mod}.{attr}"))
+                findings.append((pos, f"GLOBAL imports {mod}.{attr}"))
         elif name == "REDUCE":
             findings.append((pos, "REDUCE calls a pushed callable"))
     return findings, globals_seen
