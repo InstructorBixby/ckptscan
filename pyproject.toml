@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ckptscan"
+version = "0.1.0.dev0"
+description = "Scan model checkpoints for code that executes at load time"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "c01n31pan1c", email = "panic@c01n31.net"}]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
+[project.scripts]
+ckptscan = "ckptscan.commands.main:main"
+
+[tool.setuptools.packages.find]
+include = ["ckptscan*"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "C4"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
