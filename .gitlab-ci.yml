@@ -1,0 +1,17 @@
+# The docker runner on hv1. This exists because I tag things without
+# running the suite first and then wonder why an old flag is gone.
+stages:
+  - test
+
+test:
+  stage: test
+  image: python:$PY-slim
+  parallel:
+    matrix:
+      - PY: ["3.11", "3.12"]
+  before_script:
+    - pip install uv
+    - uv pip install --system -e ".[dev]"
+  script:
+    - ruff check .
+    - pytest -q
