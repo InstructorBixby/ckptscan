@@ -1,4 +1,4 @@
-"""Build the deliberately-unsafe pickles the tests scan.
+"""Build the deliberately-unsafe checkpoints the tests scan.
 
 Generated, never committed. Two reasons:
 
@@ -15,12 +15,16 @@ exercise the detector, and a marker file does that exactly as well as
 anything harmful would.
 """
 import argparse
+import collections
+import io
 import os
 import pathlib
 import pickle
+import zipfile
 
 
 MARKER = "ckptscan-fixture-ran"
+TORCH_MAGIC = 0x1950A86A20F9469CFC6C
 
 
 class SystemPayload:
@@ -37,11 +41,20 @@ class EvalPayload:
         return (eval, ("open('/tmp/" + MARKER + "', 'w').close()",))
 
 
-class BenignTensorish:
-    """What an ordinary checkpoint looks like: a REDUCE nobody minds."""
+class UnknownCallablePayload:
+    """A REDUCE to something no allowlist can know about."""
 
     def __reduce__(self):
-        return (dict, ([("weight", [0.0, 1.0])],))
+        return (collections.namedtuple, ("Point", "x y"))
+
+
+def state_dict():
+    """What an ordinary checkpoint looks like."""
+    return collections.OrderedDict([
+        ("features.0.weight", [[0.1, 0.2], [0.3, 0.4]]),
+        ("features.0.bias", [0.0, 0.0]),
+        ("classifier.weight", [[0.5]]),
+    ])
 
 
 def write(path, obj, protocol):
@@ -51,14 +64,62 @@ def write(path, obj, protocol):
     return path
 
 
+def write_legacy(path, obj):
+    """The pre-zip torch format: magic number, then the object graph."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("wb") as fh:
+        pickle.dump(TORCH_MAGIC, fh, protocol=2)
+        pickle.dump({"protocol_version": 1001}, fh, protocol=2)
+        pickle.dump(obj, fh, protocol=2)
+    return path
+
+
+def write_zip_checkpoint(path, obj, *, extra=None, member="data.pkl"):
+    """The modern torch format: a zip with archive/data.pkl inside."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr(f"archive/{member}", pickle.dumps(obj, protocol=4))
+        z.writestr("archive/version", "3\n")
+        z.writestr("archive/data/0", os.urandom(64))
+        for name, body in (extra or {}).items():
+            z.writestr(name, body)
+    return path
+
+
+def nested_zip_bytes(obj):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("archive/data.pkl", pickle.dumps(obj, protocol=4))
+    return buf.getvalue()
+
+
 def build(out: pathlib.Path):
     made = []
+    # bare pickles
     made.append(write(out / "system_p2.pkl", SystemPayload(), 2))
     made.append(write(out / "system_p4.pkl", SystemPayload(), 4))
     made.append(write(out / "eval_p4.pkl", EvalPayload(), 4))
-    made.append(write(out / "benign_p4.pkl", BenignTensorish(), 4))
-    made.append(write(out / "plain_dict.pkl",
-                      {"weight": [1, 2, 3]}, 4))
+    made.append(write(out / "benign_p4.pkl",
+                      UnknownCallablePayload(), 4))
+    made.append(write(out / "plain_dict.pkl", state_dict(), 4))
+
+    # torch formats
+    made.append(write_legacy(out / "legacy_clean.pth", state_dict()))
+    made.append(write_legacy(out / "legacy_unsafe.pth",
+                             {"sd": state_dict(),
+                              "x": SystemPayload()}))
+    made.append(write_zip_checkpoint(out / "zip_clean.pt",
+                                     state_dict()))
+    made.append(write_zip_checkpoint(
+        out / "zip_unsafe.pt",
+        {"state_dict": state_dict(), "hook": SystemPayload()}))
+    made.append(write_zip_checkpoint(
+        out / "zip_nested.pt", state_dict(),
+        extra={"extra/inner.zip":
+               nested_zip_bytes({"hook": SystemPayload()})}))
+    made.append(write_zip_checkpoint(
+        out / "zip_traversal.pt", state_dict(),
+        extra={"../escaped.txt": b"outside"}))
     return made
 
 
