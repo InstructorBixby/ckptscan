@@ -2,8 +2,8 @@
 
 `archive/data.pkl` holds the object graph; the tensors are raw storage
 files beside it. So the analysis is: open the zip without extracting
-anything, find the members that are pickles, and run the pickle
-analyser over each.
+anything, find the members that matter, and run the right analyser over
+each.
 
 Two things that are not obvious:
 
@@ -28,7 +28,7 @@ import io
 import zipfile
 
 from ckptscan import detect
-from ckptscan.analysers import pickles
+from ckptscan.analysers import numpy_arrays, pickles
 from ckptscan.findings import Finding, Severity
 
 #: Members worth parsing as a pickle regardless of what they are called.
@@ -97,12 +97,16 @@ def analyse(data: bytes, *, path: str, depth: int = 0,
                 continue
             with zf.open(info) as fh:
                 head = fh.read(4096)
+                inner = detect.sniff(head, name=name)
                 if _is_pickleish(name, head):
                     body = head + fh.read(MAX_MEMBER)
                     out.extend(pickles.analyse(body, path=path,
                                                location=where))
-                elif detect.sniff(head, name=name) in (detect.ZIP,
-                                                       detect.NPZ):
+                elif inner == detect.NPY:
+                    body = head + fh.read(MAX_MEMBER)
+                    out.extend(numpy_arrays.analyse(
+                        body, path=path, location=where))
+                elif inner in (detect.ZIP, detect.NPZ):
                     body = head + fh.read(MAX_MEMBER)
                     if depth >= 3:
                         out.append(Finding(

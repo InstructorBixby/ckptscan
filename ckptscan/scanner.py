@@ -1,6 +1,6 @@
 """Dispatch a path to the analysers that apply to it.
 
-Everything interesting about this module is in `_for_format`: the
+Everything interesting about this module is in the dispatch table: the
 format comes from the bytes, never the extension, and a disagreement
 between the two is itself a finding rather than something to resolve
 quietly.
@@ -10,14 +10,15 @@ from __future__ import annotations
 from pathlib import Path
 
 from ckptscan import detect
-from ckptscan.analysers import archives, pickles, torch_legacy
+from ckptscan.analysers import (archives, joblib_files, numpy_arrays,
+                                pickles, torch_legacy)
 from ckptscan.findings import Finding, Severity
 
 #: Extensions worth opening when walking a directory.
 CANDIDATES = {
     ".pt", ".pth", ".bin", ".ckpt", ".pkl", ".pickle", ".joblib",
     ".npy", ".npz", ".h5", ".hdf5", ".keras", ".safetensors",
-    ".gguf", ".onnx", ".model", ".zip",
+    ".gguf", ".onnx", ".model", ".zip", ".sav", ".z",
 }
 
 ANALYSERS = {
@@ -25,7 +26,12 @@ ANALYSERS = {
     detect.TORCH_LEGACY: torch_legacy.analyse,
     detect.ZIP: archives.analyse,
     detect.NPZ: archives.analyse,
+    detect.NPY: numpy_arrays.analyse,
 }
+
+#: Extensions whose container needs unwrapping before a sniff means
+#: anything.
+COMPRESSED_SUFFIXES = {".joblib", ".sav", ".z", ".gz", ".bz2", ".xz"}
 
 
 def _mismatch(path: Path, claimed: str, actual: str) -> Finding:
@@ -42,6 +48,12 @@ def _mismatch(path: Path, claimed: str, actual: str) -> Finding:
 def scan_file(path: str | Path) -> list:
     p = Path(path)
     data = p.read_bytes()
+    suffix = p.suffix.lower()
+
+    if (suffix in COMPRESSED_SUFFIXES
+            and joblib_files.compression_of(data)):
+        return joblib_files.analyse(data, path=str(p))
+
     actual = detect.sniff(data, name=p.name)
     claimed = detect.declared(p)
 
