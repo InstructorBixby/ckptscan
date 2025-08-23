@@ -13,14 +13,21 @@ directory the caller names, and does nothing else. No network, no
 persistence, no execution of anything downloaded. The point is to
 exercise the detector, and a marker file does that exactly as well as
 anything harmful would.
+
+No numpy, torch, h5py or sklearn is imported. Every format is written
+by hand from its specification, so the fixtures build anywhere the
+tests run.
 """
 import argparse
 import collections
 import io
+import json
 import os
 import pathlib
 import pickle
+import struct
 import zipfile
+import zlib
 
 
 MARKER = "ckptscan-fixture-ran"
@@ -93,6 +100,51 @@ def nested_zip_bytes(obj):
     return buf.getvalue()
 
 
+def npy_bytes(descr, shape, body):
+    """An npy v1 file, written from the format spec."""
+    header = ("{'descr': %r, 'fortran_order': False, 'shape': %r, }"
+              % (descr, shape)).encode("latin-1")
+    pad = -(10 + len(header) + 1) % 64
+    header = header + b" " * pad + b"\n"
+    return (b"\x93NUMPY\x01\x00" + struct.pack("<H", len(header))
+            + header + body)
+
+
+def write_npy_object(path, obj):
+    """An object-dtype array: the body is a pickle."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(npy_bytes("|O", (1,),
+                               pickle.dumps(obj, protocol=4)))
+    return path
+
+
+def write_npy_floats(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(npy_bytes("<f4", (4,),
+                               struct.pack("<4f", 1.0, 2.0, 3.0, 4.0)))
+    return path
+
+
+def write_npz(path, arrays):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w") as z:
+        for name, body in arrays.items():
+            z.writestr(f"{name}.npy", body)
+    return path
+
+
+def write_joblib(path, obj, *, compress=True):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    raw = pickle.dumps(obj, protocol=4)
+    path.write_bytes(zlib.compress(raw) if compress else raw)
+    return path
+
+
+def safetensors_bytes(header: dict, body: bytes = b""):
+    blob = json.dumps(header, separators=(",", ":")).encode("utf-8")
+    return struct.pack("<Q", len(blob)) + blob + body
+
+
 def build(out: pathlib.Path):
     made = []
     # bare pickles
@@ -120,6 +172,25 @@ def build(out: pathlib.Path):
     made.append(write_zip_checkpoint(
         out / "zip_traversal.pt", state_dict(),
         extra={"../escaped.txt": b"outside"}))
+
+    # numpy
+    made.append(write_npy_floats(out / "floats.npy"))
+    made.append(write_npy_object(out / "object_unsafe.npy",
+                                 SystemPayload()))
+    made.append(write_npz(out / "arrays.npz", {
+        "clean": npy_bytes("<f4", (2,), struct.pack("<2f", 1.0, 2.0)),
+        "payload": npy_bytes("|O", (1,),
+                             pickle.dumps(SystemPayload(),
+                                          protocol=4)),
+    }))
+
+    # joblib
+    made.append(write_joblib(out / "model_clean.joblib",
+                             state_dict()))
+    made.append(write_joblib(out / "model_unsafe.joblib",
+                             {"est": SystemPayload()}))
+    made.append(write_joblib(out / "model_plain.joblib",
+                             state_dict(), compress=False))
     return made
 
 
