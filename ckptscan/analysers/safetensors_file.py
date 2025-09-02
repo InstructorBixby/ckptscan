@@ -29,6 +29,16 @@ from ckptscan.findings import Finding, Severity
 MAX_HEADER = 100 * 1024 * 1024
 
 
+def _offsets(spec) -> tuple[int, int] | None:
+    if not isinstance(spec, dict) or "data_offsets" not in spec:
+        return None
+    try:
+        begin, end = spec["data_offsets"]
+        return int(begin), int(end)
+    except (TypeError, ValueError):
+        return None
+
+
 def analyse(data: bytes, *, path: str, location: str = "") -> list:
     if len(data) < 8:
         return [Finding(rule="CKPT-004", severity=Severity.LOW,
@@ -59,21 +69,15 @@ def analyse(data: bytes, *, path: str, location: str = "") -> list:
     for name, spec in header.items():
         if name == "__metadata__":
             continue
-        if not isinstance(spec, dict) or "data_offsets" not in spec:
+        pair = _offsets(spec)
+        if pair is None:
             out.append(Finding(
                 rule="CKPT-017", severity=Severity.LOW, path=path,
                 location=location or name,
-                message=f"tensor {name!r} has no data_offsets"))
+                message=f"tensor {name!r} has no readable "
+                        f"data_offsets"))
             continue
-        try:
-            begin, end = spec["data_offsets"]
-            begin, end = int(begin), int(end)
-        except (TypeError, ValueError, KeyError):
-            out.append(Finding(
-                rule="CKPT-017", severity=Severity.LOW, path=path,
-                location=location or name,
-                message=f"tensor {name!r} has unreadable data_offsets"))
-            continue
+        begin, end = pair
         if begin < 0 or end < begin or end > payload:
             out.append(Finding(
                 rule="CKPT-017", severity=Severity.MEDIUM, path=path,
@@ -86,7 +90,7 @@ def analyse(data: bytes, *, path: str, location: str = "") -> list:
         spans.append((begin, end, name))
 
     spans.sort()
-    for (a_begin, a_end, a_name), (b_begin, b_end, b_name) in zip(
+    for (a_begin, a_end, a_name), (b_begin, _b_end, b_name) in zip(
             spans, spans[1:]):
         if b_begin < a_end:
             out.append(Finding(
@@ -94,6 +98,6 @@ def analyse(data: bytes, *, path: str, location: str = "") -> list:
                 location=location or b_name,
                 message=(f"tensors {a_name!r} and {b_name!r} overlap "
                          f"in the payload"),
-                detail={"a": a_name, "b": b_name}))
-        assert b_end >= b_begin
+                detail={"a": a_name, "b": b_name,
+                        "a_end": a_end, "b_begin": b_begin}))
     return out
