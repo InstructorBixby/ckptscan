@@ -10,8 +10,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from ckptscan import detect
-from ckptscan.analysers import (archives, joblib_files, numpy_arrays,
-                                pickles, torch_legacy)
+from ckptscan.analysers import (archives, gguf_file, joblib_files,
+                                numpy_arrays, pickles,
+                                safetensors_file, torch_legacy)
 from ckptscan.findings import Finding, Severity
 
 #: Extensions worth opening when walking a directory.
@@ -27,6 +28,8 @@ ANALYSERS = {
     detect.ZIP: archives.analyse,
     detect.NPZ: archives.analyse,
     detect.NPY: numpy_arrays.analyse,
+    detect.SAFETENSORS: safetensors_file.analyse,
+    detect.GGUF: gguf_file.analyse,
 }
 
 #: Extensions whose container needs unwrapping before a sniff means
@@ -35,8 +38,13 @@ COMPRESSED_SUFFIXES = {".joblib", ".sav", ".z", ".gz", ".bz2", ".xz"}
 
 
 def _mismatch(path: Path, claimed: str, actual: str) -> Finding:
-    severity = (Severity.HIGH if claimed == detect.SAFETENSORS
-                else Severity.MEDIUM)
+    # A pickle wearing a safe format's name is the interesting case:
+    # the name is usually the entire basis on which somebody decided
+    # the file was safe to load.
+    lying_about_safety = (
+        claimed in (detect.SAFETENSORS, detect.GGUF)
+        and actual in (detect.PICKLE, detect.TORCH_LEGACY, detect.ZIP))
+    severity = Severity.HIGH if lying_about_safety else Severity.MEDIUM
     return Finding(
         rule="CKPT-008", severity=severity, path=str(path),
         message=(f"extension claims {claimed}, bytes say {actual}. "
