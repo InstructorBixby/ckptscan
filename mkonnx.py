@@ -9,7 +9,6 @@ which bytes are being tested.
 Nothing here is a working model. It is a correctly-framed protobuf.
 """
 import pathlib
-import struct
 
 
 def _varint(n):
@@ -50,8 +49,7 @@ def node(op_type, domain=""):
 
 
 def graph(nodes, name="g"):
-    body = b"".join(_bytes(1, n) for n in nodes) + _bytes(2, name)
-    return body
+    return b"".join(_bytes(1, n) for n in nodes) + _bytes(2, name)
 
 
 def metadata(key, value):
@@ -87,7 +85,6 @@ def build(out: pathlib.Path):
                                    "./libcustomops.so"),))))
     made.append(write(out / "onnx_ms_domain.onnx",
                       model(opsets=(("", 17), ("com.microsoft", 1)))))
-    assert struct.pack("<B", 8)[0] == 8
     return made
 
 
