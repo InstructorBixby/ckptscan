@@ -4,8 +4,12 @@ Everything interesting about this module is in the dispatch: the format
 comes from the bytes, never the extension, and a disagreement between
 the two is itself a finding rather than something to resolve quietly.
 
-The zip case needs a second decision, because `.keras` and `.pt` are
-both zips and the member list is what tells them apart.
+Two exceptions to "never the extension", both honest:
+
+- `.keras` and `.pt` are both zips, so the member list decides.
+- ONNX is a bare protobuf with no magic number. There is nothing to
+  sniff, so the extension is all there is, and a file that claims to be
+  ONNX and parses as something executable gets `CKPT-008` first.
 """
 from __future__ import annotations
 
@@ -14,7 +18,7 @@ from pathlib import Path
 from ckptscan import detect
 from ckptscan.analysers import (archives, gguf_file, joblib_files,
                                 keras_h5, keras_zip, numpy_arrays,
-                                pickles, safetensors_file,
+                                onnx_file, pickles, safetensors_file,
                                 torch_legacy)
 from ckptscan.findings import Finding, Severity
 
@@ -25,8 +29,6 @@ CANDIDATES = {
     ".gguf", ".onnx", ".model", ".zip", ".sav", ".z",
 }
 
-#: Extensions whose container needs unwrapping before a sniff means
-#: anything.
 COMPRESSED_SUFFIXES = {".joblib", ".sav", ".z", ".gz", ".bz2", ".xz"}
 
 
@@ -38,11 +40,8 @@ def _zip_analyser(data: bytes):
 
 
 def _mismatch(path: Path, claimed: str, actual: str) -> Finding:
-    # A pickle wearing a safe format's name is the interesting case:
-    # the name is usually the entire basis on which somebody decided
-    # the file was safe to load.
     lying_about_safety = (
-        claimed in (detect.SAFETENSORS, detect.GGUF)
+        claimed in (detect.SAFETENSORS, detect.GGUF, detect.ONNX)
         and actual in (detect.PICKLE, detect.TORCH_LEGACY, detect.ZIP))
     severity = Severity.HIGH if lying_about_safety else Severity.MEDIUM
     return Finding(
@@ -63,6 +62,7 @@ def analyser_for(data: bytes, actual: str):
         detect.SAFETENSORS: safetensors_file.analyse,
         detect.GGUF: gguf_file.analyse,
         detect.HDF5: keras_h5.analyse,
+        detect.ONNX: onnx_file.analyse,
     }.get(actual)
 
 
@@ -81,6 +81,13 @@ def scan_file(path: str | Path) -> list:
     out = []
     if not detect.agrees(claimed, actual):
         out.append(_mismatch(p, claimed, actual))
+
+    # ONNX has no magic number, so a file that claims to be one and
+    # does not parse as anything else is analysed as one.
+    if claimed == detect.ONNX and actual in (detect.UNKNOWN,
+                                             detect.ONNX):
+        out.extend(onnx_file.analyse(data, path=str(p)))
+        return out
 
     fn = analyser_for(data, actual)
     if fn is None:
