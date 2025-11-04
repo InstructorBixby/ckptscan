@@ -2,6 +2,37 @@
 
 Keep a Changelog format, semver versions.
 
+## [0.3.0]
+
+### Added
+- Keras saved models, which are the format where the code is not
+  even hidden: a `Lambda` layer serialises a marshalled code
+  object into the model config, and loading reconstructs it. No
+  pickle is involved, so no amount of pickle hardening touches it.
+  `CKPT-006`, critical, no benign reading.
+- Both Keras containers. `.keras` is a zip holding `config.json`
+  and is read precisely. `.h5` needs an HDF5 reader, which is the
+  `ckptscan[keras]` extra; without it a raw-byte fallback finds
+  the config string, and every finding it produces says that is
+  what happened.
+- `CKPT-018` for custom objects and registered names a loader has
+  to resolve out of the importable world.
+- ONNX: non-standard operator domains (`CKPT-007`) and custom-op
+  libraries named in model metadata (`CKPT-018`). The risk here is
+  not code in the file, it is that running the model as intended
+  requires code from somewhere else.
+- `docs/keras.md`, `docs/taxonomy-map.md`.
+
+### Notes
+- The ONNX reader is a minimal protobuf field walk over the two
+  fields that matter, so the base install needs no `onnx`
+  dependency. The fixtures are hand-written protobuf for the same
+  reason.
+- `docs/taxonomy-map.md` says plainly that most of these rules do
+  not map onto `llm-redteam-notes` and explains why that is the
+  right answer: that taxonomy is organised by the channel hostile
+  text arrives through, and a pickle opcode never reaches a model.
+
 ## [0.2.0]
 
 ### Added
