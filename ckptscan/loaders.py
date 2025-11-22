@@ -12,11 +12,17 @@ between `torch.load(p)` and `torch.load(p, weights_only=False)` is the
 difference between relying on a default and overriding it. A regex
 cannot tell those apart and the severity does.
 
+What this deliberately does not do is follow values. `WO = False;
+torch.load(p, weights_only=WO)` reads as a splat-equivalent unknown
+rather than a confident HIGH. Constant propagation across a module is a
+different kind of tool, and a scanner that guesses wrong about a
+severity is worse than one that says it does not know.
+
 Rules:
-  CKPT-013  torch.load with the protection explicitly off
+  CKPT-011  a bare pickle/joblib/dill load
+  CKPT-013  torch.load with the protection off, or unknowable
   CKPT-015  numpy.load(allow_pickle=True)
   CKPT-016  keras load_model(safe_mode=False)
-  CKPT-011  a bare pickle/joblib/dill load
 """
 from __future__ import annotations
 
@@ -24,6 +30,15 @@ import ast
 from pathlib import Path
 
 from ckptscan.findings import Finding, Severity
+
+BARE_LOADS = {
+    "pickle.load", "pickle.loads", "cPickle.load", "cPickle.loads",
+    "dill.load", "dill.loads", "joblib.load",
+    "pandas.read_pickle", "pd.read_pickle",
+}
+
+SKIP_PARTS = {".venv", "venv", "site-packages", ".git", "__pycache__",
+              "build", "dist", ".tox", "node_modules"}
 
 
 def _name_of(node: ast.AST) -> str:
@@ -39,6 +54,7 @@ def _name_of(node: ast.AST) -> str:
 
 
 def _kw(call: ast.Call, name: str):
+    """The keyword's value node, "splat" for **kwargs, None if absent."""
     for kw in call.keywords:
         if kw.arg == name:
             return kw.value
@@ -55,8 +71,44 @@ def _is_true(node) -> bool:
     return isinstance(node, ast.Constant) and node.value is True
 
 
+def _known(node) -> bool:
+    return isinstance(node, ast.Constant) or node == "splat"
+
+
 def _loc(path: str, node: ast.AST) -> str:
     return f"{path}:{getattr(node, 'lineno', 0)}"
+
+
+def _torch_load(call: ast.Call, name: str, path: str) -> list:
+    wo = _kw(call, "weights_only")
+    where = _loc(path, call)
+    if _is_false(wo):
+        return [Finding(
+            rule="CKPT-013", severity=Severity.HIGH, path=path,
+            location=where,
+            message=("torch.load(weights_only=False) turns off the "
+                     "restricted unpickler. Whatever this loads "
+                     "executes."),
+            detail={"call": name, "weights_only": "False"})]
+    if _is_true(wo):
+        return []
+    if wo is None:
+        return [Finding(
+            rule="CKPT-013", severity=Severity.LOW, path=path,
+            location=where,
+            message=("torch.load relying on the default. Restricted on "
+                     "2.6 and later, executes anything on earlier "
+                     "versions -- check the pin."),
+            detail={"call": name, "weights_only": "default"})]
+    return [Finding(
+        rule="CKPT-013", severity=Severity.MEDIUM, path=path,
+        location=where,
+        message=("torch.load where weights_only is not a literal; "
+                 "whether the restricted unpickler is on cannot be "
+                 "determined from this call"),
+        detail={"call": name,
+                "weights_only": "**kwargs" if wo == "splat"
+                                else "non-literal"})]
 
 
 def analyse_source(source: str, *, path: str) -> list:
@@ -75,38 +127,11 @@ def analyse_source(source: str, *, path: str) -> list:
         tail = name.rsplit(".", 1)[-1]
         where = _loc(path, node)
 
-        if name.endswith("torch.load") or name == "load" and False:
-            pass
+        if tail == "load" and (name == "torch.load"
+                               or name.endswith(".torch.load")):
+            out.extend(_torch_load(node, name, path))
 
-        if tail == "load" and (name.startswith("torch")
-                               or name.endswith("torch.load")):
-            wo = _kw(node, "weights_only")
-            if _is_false(wo):
-                out.append(Finding(
-                    rule="CKPT-013", severity=Severity.HIGH, path=path,
-                    location=where,
-                    message=("torch.load(weights_only=False) turns off "
-                             "the restricted unpickler. Whatever this "
-                             "loads executes."),
-                    detail={"call": name, "weights_only": "False"}))
-            elif wo == "splat":
-                out.append(Finding(
-                    rule="CKPT-013", severity=Severity.MEDIUM,
-                    path=path, location=where,
-                    message=("torch.load with keyword arguments from a "
-                             "dict; whether weights_only is set cannot "
-                             "be determined here"),
-                    detail={"call": name, "weights_only": "**kwargs"}))
-            elif wo is None:
-                out.append(Finding(
-                    rule="CKPT-013", severity=Severity.LOW, path=path,
-                    location=where,
-                    message=("torch.load relying on the default. Safe "
-                             "on 2.6 and later, executes anything on "
-                             "earlier versions -- check the pin."),
-                    detail={"call": name, "weights_only": "default"}))
-
-        elif tail == "load" and name.startswith(("np.", "numpy.")):
+        elif tail == "load" and name.split(".")[0] in ("np", "numpy"):
             if _is_true(_kw(node, "allow_pickle")):
                 out.append(Finding(
                     rule="CKPT-015", severity=Severity.HIGH, path=path,
@@ -128,9 +153,7 @@ def analyse_source(source: str, *, path: str) -> list:
                              f"config."),
                     detail={"call": name}))
 
-        elif name in ("pickle.load", "pickle.loads", "dill.load",
-                      "dill.loads", "cPickle.load", "joblib.load",
-                      "pandas.read_pickle", "pd.read_pickle"):
+        elif name in BARE_LOADS:
             out.append(Finding(
                 rule="CKPT-011", severity=Severity.MEDIUM, path=path,
                 location=where,
@@ -145,12 +168,11 @@ def analyse_path(path: str | Path) -> list:
     p = Path(path)
     if p.is_file():
         return analyse_source(
-            p.read_text(encoding="utf-8", errors="replace"), path=str(p))
+            p.read_text(encoding="utf-8", errors="replace"),
+            path=str(p))
     out = []
     for child in sorted(p.rglob("*.py")):
-        if any(part in {".venv", "venv", "site-packages", ".git",
-                        "__pycache__", "build", "dist"}
-               for part in child.parts):
+        if any(part in SKIP_PARTS for part in child.parts):
             continue
         out.extend(analyse_source(
             child.read_text(encoding="utf-8", errors="replace"),
