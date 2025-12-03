@@ -22,7 +22,7 @@ def test_the_default_is_low_with_a_current_pin(tmp_path, capsys):
     assert "LOW" in capsys.readouterr().out
 
 
-def test_the_default_is_high_with an_old_pin(tmp_path, capsys):
+def test_the_default_is_high_with_an_old_pin(tmp_path, capsys):
     p = project(tmp_path, "import torch\ntorch.load(f)\n",
                 pin="torch==2.1.0\n")
     assert main(["loaders", str(p)]) == 1
@@ -48,3 +48,12 @@ def test_a_clean_project(tmp_path):
     p = project(tmp_path, "import torch\n"
                           "torch.load(f, weights_only=True)\n")
     assert main(["loaders", str(p)]) == 0
+
+
+def test_the_project_flag_points_somewhere_else(tmp_path, capsys):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "app.py").write_text("import torch\ntorch.load(f)\n")
+    (tmp_path / "requirements.txt").write_text("torch==2.1.0\n")
+    assert main(["loaders", str(src), "--project", str(tmp_path)]) == 1
+    assert "predates" in capsys.readouterr().out
