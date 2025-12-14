@@ -2,6 +2,38 @@
 
 Keep a Changelog format, semver versions.
 
+## [0.4.0]
+
+PyTorch 2.6 made `torch.load(weights_only=True)` the default
+(released 2025-01-29). That is the largest improvement to this
+problem that has happened and it makes the common case a refusal
+instead of a shell. This release is about what is left.
+
+### Added
+- `ckptscan loaders`: an AST scan of Python source for load calls
+  that turn the protection off. `weights_only=False` (`CKPT-013`),
+  `numpy.load(allow_pickle=True)` (`CKPT-015`),
+  `load_model(safe_mode=False)` (`CKPT-016`), and the bare
+  pickle/joblib/dill loads that have no restricted mode at all
+  (`CKPT-011`).
+- Torch pin detection. Relying on the default is LOW on 2.6 or
+  later and HIGH on an older pin, with the pin quoted in the
+  message. An unknown pin changes nothing, because a guess must
+  not lower a severity.
+- Subcommands, with `ckptscan <path>` still meaning
+  `ckptscan scan <path>`.
+- `docs/weights-only.md`: an honest account of what the default
+  fixes (most torch exposure by volume) and what it does not
+  (opt-outs, old pins, Keras Lambda layers, ONNX custom ops, numpy
+  object arrays, joblib, and everything already shipped).
+- `docs/loaders.md`.
+
+### Changed
+- The README leads with what changed rather than implying nothing
+  did, and the recommendation is now: ship safetensors, keep
+  loaders current, do not pass the opt-out. Scanning is for the
+  files you did not choose.
+
 ## [0.3.0]
 
 ### Added
