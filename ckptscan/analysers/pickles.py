@@ -8,13 +8,27 @@ Rules:
 
 CKPT-002 is the one that does the work and the one that generates the
 complaints. A checkpoint from a project with its own custom classes
-legitimately calls things no allowlist can know about, so CKPT-002 is
-MEDIUM and says "I do not recognise this" rather than claiming harm.
+legitimately calls things no allowlist can know about, so it says "I do
+not recognise this" rather than claiming harm.
+
+Severities come from `ckptscan.registry` rather than being written
+here, so a rule's severity lives in exactly one place.
 """
 from __future__ import annotations
 
 from ckptscan import opcodes, reach
-from ckptscan.findings import Finding, Severity
+from ckptscan.findings import Finding
+from ckptscan.registry import default_severity as sev
+
+#: Dangerous callables whose reach is a network primitive. These map
+#: onto the exfiltration group in llm-redteam-notes, where the
+#: detection advice transfers directly.
+_EGRESS_MODULES = {"socket", "urllib.request", "requests", "httplib",
+                   "http.client", "ftplib", "smtplib", "telnetlib"}
+
+
+def _taxonomy(module: str) -> tuple:
+    return ("EX-004",) if module in _EGRESS_MODULES else ()
 
 
 def analyse(data: bytes, *, path: str, location: str = "") -> list:
@@ -22,43 +36,42 @@ def analyse(data: bytes, *, path: str, location: str = "") -> list:
         stream = opcodes.parse(data)
     except opcodes.ParseError as exc:
         return [Finding(
-            rule="CKPT-004", severity=Severity.LOW, path=path,
+            rule="CKPT-004", severity=sev("CKPT-004"), path=path,
             location=location,
             message=f"not a parseable pickle stream: {exc}")]
 
     out = []
     for r in reach.reach_of(stream):
+        base = {"module": r.module, "attr": r.attr,
+                "opcode": r.opcode, "offset": r.pos,
+                "protocol": stream.protocol}
+        where = location or f"offset {r.pos}"
         if r.how == reach.CALLED and r.verdict == "dangerous":
             out.append(Finding(
-                rule="CKPT-001", severity=Severity.CRITICAL, path=path,
-                location=location or f"offset {r.pos}",
+                rule="CKPT-001", severity=sev("CKPT-001"), path=path,
+                location=where,
                 message=(f"{r.opcode} calls {r.dotted} -- {r.reason}. "
-                         f"Loading this file executes code."),
-                detail={"module": r.module, "attr": r.attr,
-                        "opcode": r.opcode, "offset": r.pos,
-                        "protocol": stream.protocol}))
+                         f"An unrestricted load executes this."),
+                detail=base, taxonomy=_taxonomy(r.module)))
         elif r.how == reach.CALLED and r.verdict == "unknown":
             out.append(Finding(
-                rule="CKPT-002", severity=Severity.MEDIUM, path=path,
-                location=location or f"offset {r.pos}",
+                rule="CKPT-002", severity=sev("CKPT-002"), path=path,
+                location=where,
                 message=(f"{r.opcode} calls {r.dotted}, which is not on "
                          f"the allowlist. Legitimate for a checkpoint "
                          f"with custom classes; review it."),
-                detail={"module": r.module, "attr": r.attr,
-                        "opcode": r.opcode, "offset": r.pos,
-                        "protocol": stream.protocol}))
+                detail=base))
         elif r.how == reach.IMPORTED and r.verdict == "dangerous":
             out.append(Finding(
-                rule="CKPT-003", severity=Severity.HIGH, path=path,
-                location=location or f"offset {r.pos}",
+                rule="CKPT-003", severity=sev("CKPT-003"), path=path,
+                location=where,
                 message=(f"imports {r.dotted} without calling it in "
                          f"this stream -- {r.reason}. The import "
                          f"itself runs the module's top level."),
-                detail={"module": r.module, "attr": r.attr,
-                        "offset": r.pos}))
+                detail=base, taxonomy=_taxonomy(r.module)))
     if stream.truncated:
         out.append(Finding(
-            rule="CKPT-004", severity=Severity.LOW, path=path,
+            rule="CKPT-004", severity=sev("CKPT-004"), path=path,
             location=location,
             message="stream ended early or hit the opcode budget; "
                     "analysis is incomplete"))
