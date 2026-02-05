@@ -16,8 +16,7 @@ from ckptscan.findings import Severity
 
 def _reweight(findings: list, floor, root: str) -> list:
     """Raise the default-reliance finding when the pin is old."""
-    old = pins.predates_flip(floor)
-    if not old:
+    if not pins.predates_flip(floor):
         return findings
     shown = ".".join(str(n) for n in floor)
     for f in findings:
@@ -34,16 +33,22 @@ def _reweight(findings: list, floor, root: str) -> list:
 
 def run(args) -> int:
     findings = []
+    scanned = 0
     for path in args.paths:
         try:
             found = loaders.analyse_path(path)
         except OSError as exc:
             print(f"ckptscan: {exc}", file=sys.stderr)
             return 2
+        p = Path(path)
+        scanned += 1 if p.is_file() else sum(
+            1 for c in p.rglob("*.py")
+            if not any(part in loaders.SKIP_PARTS for part in c.parts))
         root = args.project or path
         floor = None if args.no_pin else pins.torch_floor(root)
         findings.extend(_reweight(found, floor, str(Path(root))))
     args._findings = findings
+    args._scanned = scanned
     return 0
 
 

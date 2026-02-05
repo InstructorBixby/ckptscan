@@ -2,8 +2,22 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
-from ckptscan.scanner import scan_path
+from ckptscan.scanner import CANDIDATES, scan_path
+
+
+def _count(paths) -> int:
+    total = 0
+    for path in paths:
+        p = Path(path)
+        if p.is_file():
+            total += 1
+        else:
+            total += sum(1 for c in p.rglob("*")
+                         if c.is_file()
+                         and c.suffix.lower() in CANDIDATES)
+    return total
 
 
 def run(args) -> int:
@@ -15,6 +29,7 @@ def run(args) -> int:
             print(f"ckptscan: {exc}", file=sys.stderr)
             return 2
     args._findings = findings
+    args._scanned = _count(args.paths)
     return 0
 
 
