@@ -15,3 +15,6 @@ test:
   script:
     - ruff check .
     - pytest -q
+    # The rule table is generated. Nothing stops me editing the
+    # generated copy by hand at 1am, so the pipeline diffs it.
+    - python scripts/regen_rules.py --check
