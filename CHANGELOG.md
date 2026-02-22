@@ -2,6 +2,34 @@
 
 Keep a Changelog format, semver versions.
 
+## [0.5.0]
+
+### Added
+- A rule registry. Every `CKPT-` id now has one documented entry
+  with a title, a default severity, what was observed, why it
+  matters and what to do. The severity of a rule had been living
+  in three analysers and its documentation in none, and two of
+  them had already drifted apart.
+- `ckptscan rules`, and `docs/rules.md` generated from the
+  registry with a CI check that fails when it is stale.
+- JSON output, versioned, with the finding detail and the
+  suppression list.
+- SARIF 2.1.0 output. An internal location -- a zip member, a byte
+  offset, a layer name -- goes in `logicalLocations` rather than
+  being faked as a line number, because a fabricated line in a
+  binary is worse than none. Severity survives the four-level
+  mapping in `properties.severity` and `rank`.
+- `ckptscan.toml`: `fail_on`, `[severity]` overrides,
+  `[[suppress]]` and `[allow]`.
+- **A suppression requires a justification**, with a minimum
+  length, and a missing one is a configuration error rather than a
+  warning. Suppressions appear in every output format with their
+  reason attached.
+- `--explain` prints the remediation with each finding;
+  `--output`, `--no-color`, `NO_COLOR`.
+- Two tests that keep the registry honest: every emitted rule id
+  must be documented, and every documented id must be reachable.
+
 ## [0.4.0]
 
 PyTorch 2.6 made `torch.load(weights_only=True)` the default
