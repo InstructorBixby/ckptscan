@@ -221,6 +221,19 @@ RULES: dict[str, Rule] = {r.id: r for r in [
           "is corruption or a hand-made file, not execution.",
           "Re-download. If the counts are deliberate, the file will "
           "not load either."),
+_rule("CKPT-009", "File does not match the published manifest",
+      Severity.HIGH,
+      "A checksum mismatch against a manifest, a file in the "
+      "manifest that is missing on disk, or a file on disk that "
+      "the manifest does not mention.",
+      "Static analysis answers 'what would this file do'. It "
+      "cannot answer 'is this the file they published', and that "
+      "is the cheaper question with the stronger answer. An extra "
+      "file beside a verified set matters as much as a changed "
+      "one: nothing stops a loader reading it.",
+      "Re-download from the publisher and compare again. Do not "
+      "proceed on a mismatch because the content looks fine -- a "
+      "clean scan of the wrong file is worth nothing."),
 ]}
 
 
