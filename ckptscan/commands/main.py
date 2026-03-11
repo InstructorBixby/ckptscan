@@ -19,14 +19,17 @@ from ckptscan import config as config_mod
 from ckptscan.commands import loaders as loaders_cmd
 from ckptscan.commands import rules as rules_cmd
 from ckptscan.commands import scan as scan_cmd
+from ckptscan.commands import verify as verify_cmd
 from ckptscan.findings import Severity
 from ckptscan.report import human, json_report, sarif
 
-MODULES = (scan_cmd, loaders_cmd, rules_cmd)
-SUBCOMMANDS = {"scan", "loaders", "rules"}
+MODULES = (scan_cmd, loaders_cmd, verify_cmd, rules_cmd)
+SUBCOMMANDS = {"scan", "loaders", "verify", "rules"}
 
 RENDERERS = {"human": human.render, "json": json_report.render,
              "sarif": sarif.render}
+
+VALUE_FLAGS = {"--fail-on", "--format", "--output", "--config"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -63,8 +66,7 @@ def _normalise(argv: list) -> list:
             skip_next = False
             continue
         if token.startswith("-"):
-            skip_next = token in ("--fail-on", "--format", "--output",
-                                  "--config")
+            skip_next = token in VALUE_FLAGS
             continue
         if token in SUBCOMMANDS:
             return argv
@@ -109,8 +111,7 @@ def main(argv=None) -> int:
     if args.format == "human":
         text = human.render(
             findings,
-            colour=(not args.no_color
-                    and human.use_colour()),
+            colour=(not args.no_color and human.use_colour()),
             explain=args.explain, dropped=dropped)
     else:
         text = RENDERERS[args.format](
