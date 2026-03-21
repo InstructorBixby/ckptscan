@@ -1,19 +1,17 @@
-import pathlib
-import sys
-
 import pytest
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-
-import mkfixtures  # noqa: E402
-import mkkeras  # noqa: E402
-import mkonnx  # noqa: E402
+from ckptscan import corpus
 
 
 @pytest.fixture(scope="session")
-def fixtures(tmp_path_factory):
-    out = tmp_path_factory.mktemp("fixtures")
-    mkfixtures.build(out)
-    mkkeras.build(out)
-    mkonnx.build(out)
+def samples(tmp_path_factory):
+    """The generated corpus. Built once per test session."""
+    out = tmp_path_factory.mktemp("corpus")
+    corpus.build(out)
     return out
+
+
+@pytest.fixture(scope="session")
+def fixtures(samples):
+    """Backwards-compatible alias while the older tests move over."""
+    return samples

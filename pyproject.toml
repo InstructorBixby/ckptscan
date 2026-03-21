@@ -19,6 +19,7 @@ onnx = ["onnx"]
 all = ["h5py", "onnx"]
 [project.scripts]
 ckptscan = "ckptscan.commands.main:main"
+ckptscan-mkcorpus = "ckptscan.commands.mkcorpus:main"
 
 [tool.setuptools.packages.find]
 include = ["ckptscan*"]
