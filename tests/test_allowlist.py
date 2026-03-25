@@ -22,31 +22,27 @@ def test_a_nested_ordereddict_is_still_clean():
     assert rules(pickle.dumps(obj, protocol=4)) == []
 
 
-def test_os_system_is_critical(fixtures):
-    data = (fixtures / "system_p4.pkl").read_bytes()
+def test_os_system_is_critical(samples):
+    data = (samples / "unsafe" / "system_p4.pkl").read_bytes()
     findings = pickles.analyse(data, path="m.pkl")
     assert [f.rule for f in findings] == ["CKPT-001"]
     assert findings[0].severity == "critical"
     assert "os.system" in findings[0].message
 
 
-def test_os_system_is_critical_under_protocol_2(fixtures):
-    data = (fixtures / "system_p2.pkl").read_bytes()
+def test_os_system_is_critical_under_protocol_2(samples):
+    data = (samples / "unsafe" / "system_p2.pkl").read_bytes()
     assert rules(data) == ["CKPT-001"]
 
 
-def test_eval_is_critical(fixtures):
-    data = (fixtures / "eval_p4.pkl").read_bytes()
+def test_eval_is_critical(samples):
+    data = (samples / "unsafe" / "eval.pkl").read_bytes()
     assert rules(data) == ["CKPT-001"]
 
 
-def test_an_unrecognised_callable_is_medium():
-    class Custom:
-        def __reduce__(self):
-            return (collections.namedtuple, ("P", "x"))
-
-    findings = pickles.analyse(pickle.dumps(Custom(), protocol=4),
-                               path="m.pkl")
+def test_an_unrecognised_callable_is_medium(samples):
+    data = (samples / "unsafe" / "unknown_callable.pkl").read_bytes()
+    findings = pickles.analyse(data, path="m.pkl")
     assert [f.rule for f in findings] == ["CKPT-002"]
     assert findings[0].severity == "medium"
 
