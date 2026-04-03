@@ -15,6 +15,34 @@ test:
   script:
     - ruff check .
     - pytest -q
-    # The rule table is generated. Nothing stops me editing the
-    # generated copy by hand at 1am, so the pipeline diffs it.
     - python scripts/regen_rules.py --check
+
+corpus:
+  # The corpus is generated, scanned from the command line, and
+  # checked against its own manifest. The unit tests do this too;
+  # this job proves it works through the installed console scripts,
+  # which is how I actually run it.
+  stage: test
+  image: python:3.12-slim
+  before_script:
+    - pip install uv
+    - uv pip install --system -e "."
+  script:
+    - ckptscan-mkcorpus --out corpus
+    # Every unsafe sample must still fire. A detector going quiet is
+    # the failure I would never notice, because quiet looks like
+    # success.
+    - |
+      for f in corpus/unsafe/*; do
+        ckptscan --quiet "$f" && { echo "MISSED: $f"; exit 1; }
+      done
+      echo "all unsafe samples detected"
+    # And the clean half must stay clean, in the same job, so a
+    # false-positive fix that breaks a detection cannot pass.
+    - ckptscan corpus/clean
+    - ckptscan corpus --format sarif --output ckptscan.sarif
+  artifacts:
+    when: always
+    expire_in: 2 weeks
+    paths:
+      - ckptscan.sarif
