@@ -2,6 +2,39 @@
 
 Keep a Changelog format, semver versions.
 
+## [0.6.0]
+
+### Added
+- `ckptscan verify`: a directory against a published checksum
+  list (`CKPT-009`). `sha256sum` output or JSON, in three shapes,
+  with the algorithm taken from the digest length. The cheapest
+  useful thing here and the one with the strongest answer -- a
+  clean scan of the wrong file is worth nothing.
+- A file present on disk and absent from the manifest is reported,
+  not ignored. Adding a file to a verified directory changes no
+  hash, and nothing stops a loader reading it. `--allow-extra`
+  silences only that.
+- Manifest hashing is streamed at 1 MiB, with a test asserting the
+  read size. Reading a shard whole is the easiest way to turn a
+  scanner into an out-of-memory kill in somebody's CI.
+- `ckptscan-mkcorpus`: the sample corpus promoted out of the test
+  fixtures. Twenty-odd checkpoints, generated on demand, never
+  committed, with a manifest recording the rules each must
+  produce.
+- Every payload in the corpus is inert -- a marker write and
+  nothing else -- and there is a test that greps the generator's
+  own source for network and deletion calls.
+- A CI job that generates the corpus, asserts every unsafe sample
+  still fires through the installed console script, and asserts
+  the clean half stays silent in the same run. A change that fixes
+  a false positive by breaking a detection cannot pass.
+- `docs/manifest.md`, `docs/corpus.md`.
+
+### Changed
+- The per-format test fixtures are gone; the tests use the
+  corpus. Two sets of sample files meant two things to update and
+  they had already diverged once.
+
 ## [0.5.0]
 
 ### Added
