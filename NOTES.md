@@ -17,54 +17,56 @@ happens. Three reasons not to:
    in the standard library, it is what the pickle maintainers use, and
    it does not call a single thing the stream names.
 
-So: parse the opcodes, resolve the names, report the reach. No import of
-the named module, no construction of the named class, nothing.
-
 ## the first run against real files
 
-I pointed the naive version at a directory of checkpoints I had lying
-around -- nothing exotic, a handful of models from public repositories
--- and got 1,900 findings from nine files. Every one of them was this:
-
-    global  collections.OrderedDict
-    global  torch._utils._rebuild_tensor_v2
-    global  torch.FloatStorage
-    !! REDUCE calls a pushed callable
-
-A PyTorch state dict is an `OrderedDict` of tensors, and a tensor is
-reconstructed by calling `torch._utils._rebuild_tensor_v2` through
-`REDUCE`. Hundreds of times. That is not a weakness in the files, it is
-the format working as designed, and a scanner that reports it is a
-scanner nobody runs twice.
-
-So `REDUCE` on its own is not a finding. **`REDUCE` reaching a callable
-that is not on the allowlist** is a finding, and that makes the
-allowlist the product. Everything else in this repository is plumbing
-around a list of callables known to be fine, and the quality of that
-list is the quality of the tool.
-
-It is also the honest reason this is not a regex. You can grep a file
-for `os.system` in two lines. You will then spend a month on
-`OrderedDict`.
+The naive version produced 1,900 findings from nine ordinary public
+checkpoints, every one of them `collections.OrderedDict` and
+`torch._utils._rebuild_tensor_v2`. A PyTorch state dict *is* an
+`OrderedDict`, and a tensor *is* reconstructed through `REDUCE`. So
+`REDUCE` alone is not a finding and the allowlist is the product.
 
 ## the allowlist is a liability, and that is the trade
 
 Every entry is a promise that calling that thing with arguments an
-attacker chose is harmless. Some of those promises are weaker than they
-look, so each entry carries a reason, and an entry whose reason I cannot
-write down does not go in.
+attacker chose is harmless. Each entry carries a reason, and an entry
+whose reason I cannot write down does not go in.
 
-The one I keep coming back to: a legitimate reconstruction function that
-takes a size, a stride and a storage offset can be handed values that
-make the resulting tensor read out of bounds. That is a memory-safety
-bug in the loader rather than code execution in the file, and it is a
-real argument against ever calling it the file is safe. Which is why a
-clean report says "no load-time code execution reachable" and not
-"safe".
+The one I keep coming back to: a legitimate reconstruction function
+that takes a size, a stride and a storage offset can be handed values
+that make the resulting tensor read out of bounds. That is a
+memory-safety bug in the loader rather than code execution in the file,
+and it is why a clean report says "no load-time code execution
+reachable" and not "safe".
+
+## memory
+
+The first report from somebody else's machine was an out-of-memory
+kill on a sharded 70B model. Not a bug in the analysis -- a bug in
+`read_bytes()`. A 9 GiB shard was being read whole so that a function
+could look at the first few hundred opcodes of it.
+
+`pickletools.genops` accepts a file object and reads as it goes. It
+always did. The fix was to stop materialising the file and hand over
+the open handle: constant memory, and faster, because a payload is
+almost always in the first kilobyte and the tensor data after it never
+has to be touched.
+
+The same mistake was in the archive analyser, which was reading each zip
+member into a bytes object before parsing it. `ZipFile.open` returns a
+stream too.
+
+What still has to be read whole:
+
+- the compressed containers, because decompression needs an output
+  buffer. Capped, and the cap is reported as a finding when it is hit.
+- the `.npy` header, which is tiny.
+- a Keras `config.json`, which is a few hundred kilobytes.
+- the safetensors and GGUF headers, which are bounded by the format.
+
+None of those scale with the weights, which was the whole problem.
 
 ## what a finding means
 
 "This stream would import this and call it, and I do not recognise it."
-Not "this file is malicious". The distinction matters because the first
-statement is checkable and the second is a judgement the tool is not
-entitled to make.
+Not "this file is malicious". The first statement is checkable and the
+second is a judgement the tool is not entitled to make.

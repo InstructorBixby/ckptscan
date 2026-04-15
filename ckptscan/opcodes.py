@@ -6,13 +6,18 @@ callable is pushed by an earlier opcode and consumed by a later one.
 
 This is a *partial* interpreter and deliberately so. It tracks enough
 of the stack to answer "what is under the top of the stack when REDUCE
-happens", and it models everything it does not understand as an opaque
+happens", and models everything it does not understand as an opaque
 Unknown. Nothing it does can call anything the stream names: the only
 things that ever go on this stack are strings, numbers, None, marks and
 Unknown placeholders.
+
+It reads from a *stream*. `genops` accepts a file object and consumes
+it lazily, which matters because a sharded checkpoint member is
+gigabytes of tensor data behind a few hundred opcodes of structure.
 """
 from __future__ import annotations
 
+import io
 import pickletools
 from dataclasses import dataclass, field
 
@@ -41,16 +46,13 @@ class Unknown:
 
 MARK = object()
 
-# Opcodes that push a literal string.
 _STR = {"SHORT_BINUNICODE", "BINUNICODE", "UNICODE", "BINUNICODE8",
         "STRING", "BINSTRING", "SHORT_BINSTRING", "BINBYTES",
         "SHORT_BINBYTES", "BINBYTES8"}
-# Opcodes that push some other scalar nobody needs the value of.
 _SCALAR = {"INT", "BININT", "BININT1", "BININT2", "LONG", "LONG1",
            "LONG4", "FLOAT", "BINFLOAT", "NONE", "NEWTRUE",
            "NEWFALSE", "PERSID", "BINPERSID", "BYTEARRAY8",
            "NEXT_BUFFER", "READONLY_BUFFER"}
-# Opcodes that pop a mark and push one aggregate.
 _BUILD_SEQ = {"TUPLE", "LIST", "DICT", "SET", "FROZENSET"}
 _FIXED_TUPLE = {"TUPLE1": 1, "TUPLE2": 2, "TUPLE3": 3}
 
@@ -60,18 +62,25 @@ class Stream:
     """The analysable summary of one pickle stream."""
     protocol: int = 0
     globals: list = field(default_factory=list)
-    # (GlobalRef | Unknown, opcode name, pos) for each call-like opcode
     calls: list = field(default_factory=list)
     opcodes: list = field(default_factory=list)
     truncated: bool = False
+    end: int = 0
 
     @property
     def opcode_names(self) -> set:
         return {name for name, _ in self.opcodes}
 
 
-def parse(data: bytes, *, max_opcodes: int = 2_000_000) -> Stream:
-    """Walk the stream. Never imports, never constructs, never calls."""
+def parse(data, *, max_opcodes: int = 2_000_000) -> Stream:
+    """Walk the stream. Never imports, never constructs, never calls.
+
+    `data` is bytes or a readable binary file object. A file object is
+    consumed lazily and is the reason this scales to a shard.
+    """
+    if isinstance(data, (bytes, bytearray, memoryview)):
+        data = io.BytesIO(data)
+
     out = Stream()
     stack: list = []
     memo: dict = {}
@@ -90,9 +99,9 @@ def parse(data: bytes, *, max_opcodes: int = 2_000_000) -> Stream:
         return items
 
     try:
-        ops = pickletools.genops(data)
-        for op, arg, pos in ops:
+        for op, arg, pos in pickletools.genops(data):
             count += 1
+            out.end = pos
             if count > max_opcodes:
                 out.truncated = True
                 break
@@ -123,8 +132,8 @@ def parse(data: bytes, *, max_opcodes: int = 2_000_000) -> Stream:
                 stack.append(ref)
             elif name in ("REDUCE", "NEWOBJ", "NEWOBJ_EX"):
                 if name == "NEWOBJ_EX":
-                    pop()      # kwargs
-                pop()          # args tuple
+                    pop()
+                pop()
                 callee = pop()
                 out.calls.append((callee, name, pos))
                 stack.append(Unknown(name))
@@ -141,10 +150,10 @@ def parse(data: bytes, *, max_opcodes: int = 2_000_000) -> Stream:
                     out.calls.append((callee, name, pos))
                 stack.append(Unknown(name))
             elif name == "BUILD":
-                state = pop()
+                pop()
                 obj = pop()
                 out.calls.append((obj, name, pos))
-                stack.append(obj if not isinstance(state, str) else obj)
+                stack.append(obj)
             elif name in _BUILD_SEQ:
                 pop_to_mark()
                 stack.append(Unknown(name))
@@ -152,9 +161,8 @@ def parse(data: bytes, *, max_opcodes: int = 2_000_000) -> Stream:
                 for _ in range(_FIXED_TUPLE[name]):
                     pop()
                 stack.append(Unknown(name))
-            elif name == "EMPTY_TUPLE":
-                stack.append(Unknown(name))
-            elif name in ("EMPTY_LIST", "EMPTY_DICT", "EMPTY_SET"):
+            elif name in ("EMPTY_TUPLE", "EMPTY_LIST", "EMPTY_DICT",
+                          "EMPTY_SET"):
                 stack.append(Unknown(name))
             elif name in ("PUT", "BINPUT", "LONG_BINPUT", "MEMOIZE"):
                 key = arg if name != "MEMOIZE" else len(memo)
@@ -176,6 +184,7 @@ def parse(data: bytes, *, max_opcodes: int = 2_000_000) -> Stream:
                 if stack:
                     stack.append(stack[-1])
             elif name == "STOP":
+                out.end = pos + 1
                 break
             else:
                 stack.append(Unknown(name))
