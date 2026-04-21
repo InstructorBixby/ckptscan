@@ -7,55 +7,68 @@ analysing the file as a single stream reads the magic number and
 nothing else -- which looks perfectly clean and misses the entire
 payload.
 
-So: walk the streams. Find each `STOP` the parser reports and start
-again after it, until the bytes run out.
+So: parse a stream, note where it ended, seek there, parse again. The
+seeking is why this takes a file object; the old version sliced the
+bytes, which meant holding the whole file.
 """
 from __future__ import annotations
 
+import io
+
 from ckptscan import opcodes
 from ckptscan.analysers import pickles
-from ckptscan.findings import Finding, Severity
+from ckptscan.findings import Finding
+from ckptscan.registry import default_severity as sev
 
 MAX_STREAMS = 64
+_STARTS = (b"\x80", b"(", b"c", b"]", b"}", b"K")
 
 
-def split(data: bytes) -> list[tuple[int, bytes]]:
-    """[(offset, stream bytes)] for each concatenated pickle."""
+def streams(fh) -> list:
+    """[(offset, Stream)] for each concatenated pickle."""
     out = []
-    pos = 0
-    while pos < len(data) and len(out) < MAX_STREAMS:
+    while len(out) < MAX_STREAMS:
+        start = fh.tell()
+        probe = fh.read(1)
+        if not probe:
+            break
+        if probe not in _STARTS:
+            # Storage data sits after the streams in this format.
+            break
+        fh.seek(start)
         try:
-            stream = opcodes.parse(data[pos:])
+            stream = opcodes.parse(fh)
         except opcodes.ParseError:
             break
-        stops = [p for name, p in stream.opcodes if name == "STOP"]
-        if not stops:
-            out.append((pos, data[pos:]))
+        out.append((start, stream))
+        if stream.truncated or not stream.end:
             break
-        end = stops[-1] + 1
-        out.append((pos, data[pos:pos + end]))
-        if end <= 0:
-            break
-        pos += end
-        # Trailing bytes that are not another pickle: storage data in
-        # the old format sits after the streams.
-        if pos < len(data) and data[pos] != 0x80 and \
-                data[pos:pos + 1] not in (b"(", b"c", b"]", b"}"):
-            break
+        fh.seek(start + stream.end)
     return out
 
 
-def analyse(data: bytes, *, path: str, location: str = "") -> list:
-    streams = split(data)
-    if not streams:
+def analyse(data, *, path: str, location: str = "") -> list:
+    fh = io.BytesIO(data) if isinstance(data, (bytes, bytearray)) \
+        else data
+    fh.seek(0)
+    found = streams(fh)
+    if not found:
         return [Finding(
-            rule="CKPT-004", severity=Severity.LOW, path=path,
+            rule="CKPT-004", severity=sev("CKPT-004"), path=path,
             location=location,
             message="legacy torch file contained no parseable pickle "
                     "stream")]
     out = []
-    for index, (offset, body) in enumerate(streams):
+    for index, (offset, stream) in enumerate(found):
         where = f"{location}stream {index} @{offset}" if location \
             else f"stream {index} @{offset}"
-        out.extend(pickles.analyse(body, path=path, location=where))
+        out.extend(pickles.from_stream(stream, path=path,
+                                       location=where))
     return out
+
+
+def split(data: bytes) -> list:
+    """Byte ranges of each stream. Kept for the tests and for tooling."""
+    fh = io.BytesIO(data)
+    return [(offset, data[offset:offset + (stream.end or 1)])
+            for offset, stream in streams(fh)]

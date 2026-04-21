@@ -11,8 +11,8 @@ complaints. A checkpoint from a project with its own custom classes
 legitimately calls things no allowlist can know about, so it says "I do
 not recognise this" rather than claiming harm.
 
-Severities come from `ckptscan.registry` rather than being written
-here, so a rule's severity lives in exactly one place.
+Takes bytes or an open binary stream. Severities come from
+`ckptscan.registry`, so a rule's severity lives in one place.
 """
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def _taxonomy(module: str) -> tuple:
     return ("EX-004",) if module in _EGRESS_MODULES else ()
 
 
-def analyse(data: bytes, *, path: str, location: str = "") -> list:
+def analyse(data, *, path: str, location: str = "") -> list:
     try:
         stream = opcodes.parse(data)
     except opcodes.ParseError as exc:
@@ -39,7 +39,10 @@ def analyse(data: bytes, *, path: str, location: str = "") -> list:
             rule="CKPT-004", severity=sev("CKPT-004"), path=path,
             location=location,
             message=f"not a parseable pickle stream: {exc}")]
+    return from_stream(stream, path=path, location=location)
 
+
+def from_stream(stream, *, path: str, location: str = "") -> list:
     out = []
     for r in reach.reach_of(stream):
         base = {"module": r.module, "attr": r.attr,
