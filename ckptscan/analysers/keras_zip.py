@@ -6,29 +6,48 @@ import json
 import zipfile
 
 from ckptscan.analysers import keras_config
-from ckptscan.findings import Finding, Severity
+from ckptscan.findings import Finding
+from ckptscan.registry import default_severity as sev
 
 CONFIG_MEMBERS = ("config.json", "model_config.json")
 MAX_CONFIG = 64 * 1024 * 1024
 
 
-def is_keras_archive(data: bytes) -> bool:
+def _open(data):
+    if isinstance(data, (bytes, bytearray)):
+        return zipfile.ZipFile(io.BytesIO(data))
+    return zipfile.ZipFile(data)
+
+
+def is_keras_archive(data) -> bool:
+    """True for a zip holding a Keras model config.
+
+    Takes the head of a file as well as a whole one: the central
+    directory is at the END of a zip, so a head-only check cannot read
+    the member list and falls back to the local file header names,
+    which is enough to tell a `.keras` from a `.pt`.
+    """
+    if isinstance(data, (bytes, bytearray)):
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                return bool(set(zf.namelist()) & set(CONFIG_MEMBERS))
+        except (zipfile.BadZipFile, OSError):
+            return any(name.encode() in data
+                       for name in CONFIG_MEMBERS)
     try:
-        with zipfile.ZipFile(io.BytesIO(data)) as zf:
-            names = set(zf.namelist())
-    except zipfile.BadZipFile:
+        with _open(data) as zf:
+            return bool(set(zf.namelist()) & set(CONFIG_MEMBERS))
+    except (zipfile.BadZipFile, OSError):
         return False
-    return bool(names & set(CONFIG_MEMBERS))
 
 
-def analyse(data: bytes, *, path: str, location: str = "") -> list:
+def analyse(data, *, path: str, location: str = "") -> list:
     try:
-        zf = zipfile.ZipFile(io.BytesIO(data))
+        zf = _open(data)
     except zipfile.BadZipFile as exc:
-        return [Finding(rule="CKPT-004", severity=Severity.LOW,
+        return [Finding(rule="CKPT-004", severity=sev("CKPT-004"),
                         path=path, location=location,
                         message=f"not a readable zip: {exc}")]
-    out = []
     with zf:
         names = set(zf.namelist())
         member = next((m for m in CONFIG_MEMBERS if m in names), None)
@@ -40,9 +59,8 @@ def analyse(data: bytes, *, path: str, location: str = "") -> list:
             config = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             return [Finding(
-                rule="CKPT-004", severity=Severity.LOW, path=path,
+                rule="CKPT-004", severity=sev("CKPT-004"), path=path,
                 location=member,
                 message=f"{member} is not valid JSON: {exc}")]
-        out.extend(keras_config.analyse_config(
-            config, path=path, location=f"{member}:"))
-    return out
+        return keras_config.analyse_config(
+            config, path=path, location=f"{member}:")
