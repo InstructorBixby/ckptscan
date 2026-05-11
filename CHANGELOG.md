@@ -2,6 +2,32 @@
 
 Keep a Changelog format, semver versions.
 
+## [0.7.0]
+
+### Fixed
+- **Out-of-memory on a sharded model.** Reported from somebody
+  else's machine against a 70B checkpoint: a 9 GiB shard was being
+  read whole so a function could look at the first few hundred
+  opcodes of it. `pickletools.genops` accepts a file object and
+  always did. Nothing now materialises a file to analyse it, and
+  the same mistake in the archive analyser -- reading each zip
+  member into bytes before parsing -- is gone too.
+- The legacy-torch analyser seeks between concatenated streams
+  instead of slicing the file, so it no longer needs the whole
+  thing either.
+
+### Added
+- `--jobs`: parallel scanning for sharded models, with a thread
+  pool. Output order does not depend on it, and a test asserts the
+  serial and parallel JSON are byte-identical -- a report that
+  shuffles between runs cannot be diffed, and diffing two reports
+  is most of what anyone does with them.
+- A file in a format that genuinely needs reading whole, above
+  2 GiB, is reported as `CKPT-014` rather than attempted. A
+  scanner that gets OOM-killed reports nothing at all.
+- `docs/performance.md`, including what is actually slow (hashing
+  in `verify`, not the opcode walk).
+
 ## [0.6.0]
 
 ### Added
