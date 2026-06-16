@@ -2,43 +2,56 @@
 # running the suite first and then wonder why an old flag is gone.
 stages:
   - test
+  - maintenance
+
+variables:
+  UV_CACHE_DIR: .uv-cache
+
+.uv:
+  image: python:3.12-slim
+  cache:
+    key: "uv-$CI_JOB_NAME-$PY"
+    paths:
+      - .uv-cache
+  before_script:
+    - pip install uv
 
 test:
+  extends: .uv
   stage: test
   image: python:$PY-slim
   parallel:
     matrix:
-      - PY: ["3.11", "3.12"]
-  before_script:
-    - pip install uv
-    - uv pip install --system -e ".[dev]"
+      - PY: ["3.11", "3.12", "3.13"]
   script:
+    - uv pip install --system -e ".[dev]" -c constraints-dev.txt
     - ruff check .
-    - pytest -q
+    - mypy
+    - pytest -q --cov=ckptscan --cov-report=term-missing
+        --cov-fail-under=88
     - python scripts/regen_rules.py --check
 
-corpus:
-  # The corpus is generated, scanned from the command line, and
-  # checked against its own manifest. The unit tests do this too;
-  # this job proves it works through the installed console scripts,
-  # which is how I actually run it.
+extras:
+  # The optional readers change which code path runs, so the suite
+  # has to pass both with and without them. It has broken one way
+  # and not the other twice.
+  extends: .uv
   stage: test
-  image: python:3.12-slim
-  before_script:
-    - pip install uv
-    - uv pip install --system -e "."
   script:
+    - uv pip install --system -e ".[dev,all]"
+    - pytest -q
+
+corpus:
+  extends: .uv
+  stage: test
+  script:
+    - uv pip install --system -e "."
     - ckptscan-mkcorpus --out corpus
-    # Every unsafe sample must still fire. A detector going quiet is
-    # the failure I would never notice, because quiet looks like
-    # success.
     - |
       for f in corpus/unsafe/*; do
         ckptscan --quiet "$f" && { echo "MISSED: $f"; exit 1; }
       done
       echo "all unsafe samples detected"
-    # And the clean half must stay clean, in the same job, so a
-    # false-positive fix that breaks a detection cannot pass.
     - ckptscan corpus/clean
     - ckptscan corpus --format sarif --output ckptscan.sarif
   artifacts:
@@ -46,3 +59,17 @@ corpus:
     expire_in: 2 weeks
     paths:
       - ckptscan.sarif
+
+freshness:
+  # No bot is going to open a merge request here. A scheduled pipeline
+  # tells me when the pins in constraints-dev.txt have drifted, and
+  # then I decide, which is the same outcome with one fewer moving
+  # part. Allowed to fail: drift is information, not a broken build.
+  extends: .uv
+  stage: maintenance
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  allow_failure: true
+  script:
+    - uv pip install --system -e ".[dev,all]"
+    - uv pip list --outdated
