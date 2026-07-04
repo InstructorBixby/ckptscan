@@ -2,6 +2,46 @@
 
 Keep a Changelog format, semver versions.
 
+## [1.0.0]
+
+No new detection. The rule ids, the JSON schema, the exit codes
+and the config file have been unchanged for months, and by now
+enough of my own scripts shell out to this that a rename here
+breaks my work three directories away. Version numbers only mean
+something once they start making promises.
+
+### Added
+- Full packaging metadata, `py.typed`, and a declared public API
+  re-exported from `ckptscan`.
+- `mypy --strict` outside the command modules, coverage with a
+  floor, Python 3.13 in the matrix, and a CI job that runs the
+  suite *with* the optional readers installed as well as without.
+  The suite has broken one way and not the other twice.
+- LICENSE (MIT), and `docs/working-on-this.md` -- the loop, and
+  the rules I hold myself to.
+- **A written rule for adding an allowlist entry**, with the five
+  things an entry needs and the list of modules no justification
+  gets past. The allowlist is the product and I was extending it
+  by vibes at midnight.
+- `docs/prior-art.md`: what I looked at before writing this --
+  picklescan (2023-02) and modelscan (2023-08), both of which got
+  here first, and the restricted unpickler, which is better than
+  any of them because it removes the capability instead of
+  detecting the problem.
+- `docs/stability.md`, `docs/install.md`, `docs/triage.md`,
+  `docs/failure-modes.md`, `docs/dependencies.md`.
+
+### Stability
+- Fixed from here: rule ids, exit codes, the JSON schema and its
+  `schema_version`, SARIF 2.1.0 conformance, the `ckptscan.toml`
+  sections, the subcommand names, the re-exported Python API, and
+  that the analysis is static -- which is a promise, not an
+  implementation detail.
+- A rule's *default severity* can change in a minor release. It is
+  calibration, not interface; `[severity]` pins anything a
+  pipeline of mine depends on, and a raise never happens in a
+  patch.
+
 ## [0.7.0]
 
 ### Fixed

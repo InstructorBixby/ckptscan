@@ -13,7 +13,7 @@ from ckptscan.reach import Reach, reach_of
 from ckptscan.registry import RULES, Rule
 from ckptscan.scanner import scan_file, scan_path
 
-__version__ = "0.7.0"
+__version__ = "1.0.0"
 
 __all__ = [
     "RULES",

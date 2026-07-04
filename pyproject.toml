@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ckptscan"
-version = "0.7.0"
+version = "1.0.0"
 description = "Scan model checkpoints for code that executes at load time"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -77,3 +77,6 @@ source = ["ckptscan"]
 
 [tool.coverage.report]
 exclude_lines = ["pragma: no cover", "if __name__ == .__main__.:"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]
