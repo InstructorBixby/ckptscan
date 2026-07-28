@@ -2,12 +2,12 @@
 
 A `GLOBAL` on its own is an import. An import is interesting but it is
 not the finding -- `copyreg._reconstructor` is imported by the normal
-path, and a module that is imported and never called executes only its
+path, and a module imported and never called executes only its
 module-level code, which is a real risk but a different one.
 
 The finding is a global that is *consumed by a call-like opcode*:
-REDUCE, NEWOBJ, NEWOBJ_EX, INST, OBJ, or BUILD reaching a `__setstate__`
-on it.
+REDUCE, NEWOBJ, NEWOBJ_EX, INST, OBJ, or BUILD reaching a
+`__setstate__` on it.
 """
 from __future__ import annotations
 
@@ -29,13 +29,15 @@ class Reach:
     opcode: str         # which opcode consumed it, "" if imported only
     verdict: str        # dangerous | allowed | unknown
     reason: str
+    source: str = ""    # where an allowlist entry came from
 
     @property
     def dotted(self) -> str:
         return f"{self.module}.{self.attr}"
 
 
-def reach_of(stream: Stream) -> list[Reach]:
+def reach_of(stream: Stream, *, extra=None,
+             strict: bool = False) -> list:
     """One Reach per global, deduplicated by (module, attr, how)."""
     called: dict[tuple[str, str], tuple[int, str]] = {}
     for callee, opcode, pos in stream.calls:
@@ -54,14 +56,16 @@ def reach_of(stream: Stream) -> list[Reach]:
         pos, opcode = called.get(key, (ref.pos, ""))
         out.append(Reach(
             module=ref.module, attr=ref.attr, pos=pos, how=how,
-            opcode=opcode, verdict=policy.classify(*key),
-            reason=policy.reason(*key)))
+            opcode=opcode,
+            verdict=policy.classify(*key, extra=extra, strict=strict),
+            reason=policy.reason(*key, extra=extra),
+            source=policy.source_of(*key)))
     return sorted(out, key=lambda r: (r.verdict != "dangerous",
                                       r.verdict != "unknown",
                                       r.dotted))
 
 
-def summary(reaches: list[Reach]) -> dict:
+def summary(reaches: list) -> dict:
     out = {"dangerous": 0, "unknown": 0, "allowed": 0}
     for r in reaches:
         if r.how == CALLED:
