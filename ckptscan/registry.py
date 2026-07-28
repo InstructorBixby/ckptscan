@@ -234,6 +234,17 @@ _rule("CKPT-009", "File does not match the published manifest",
       "Re-download from the publisher and compare again. Do not "
       "proceed on a mismatch because the content looks fine -- a "
       "clean scan of the wrong file is worth nothing."),
+_rule("CKPT-020", "Allowlisted call, reported in strict mode",
+      Severity.INFO,
+      "A call to a callable on the allowlist, reported because "
+      "--strict was asked for.",
+      "Not a problem. The point of strict mode is to see what the "
+      "allowlist waved through and on whose authority, rather "
+      "than to trust it silently. The message names the entry's "
+      "source -- 'core' or the issue it came from.",
+      "Nothing, unless you disagree with an entry. If you do, "
+      "docs/allowlist.md says how to argue about it, and the "
+      "attacker-control question is the one that settles it."),
 ]}
 
 
