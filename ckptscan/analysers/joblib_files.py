@@ -1,11 +1,10 @@
 """joblib, which is a pickle with extra steps.
 
-`joblib.dump` writes a pickle, optionally compressed, optionally with
-numpy arrays stored out of band. The compressed variants start with a
-zlib, gzip, bz2, lzma or lz4 magic rather than a pickle opcode, so a
-format sniff says "unknown" and the file is skipped -- which is exactly
-wrong for a format whose whole purpose is `sklearn` model
-distribution.
+`joblib.dump` writes a pickle, optionally compressed. The compressed
+variants start with a zlib, gzip, bz2, lzma or joblib-container magic
+rather than a pickle opcode, so a format sniff says "unknown" and the
+file is skipped -- exactly wrong for a format whose whole purpose is
+sklearn model distribution.
 
 So: decompress in memory, with a hard output cap, and hand the result
 to the pickle analyser.
@@ -18,7 +17,8 @@ import lzma
 import zlib
 
 from ckptscan.analysers import pickles
-from ckptscan.findings import Finding, Severity
+from ckptscan.findings import Finding
+from ckptscan.registry import default_severity as sev
 
 MAX_OUT = 256 * 1024 * 1024
 
@@ -50,8 +50,6 @@ def _inflate(data: bytes, kind: str) -> bytes:
     if kind == "zlib":
         return zlib.decompressobj().decompress(data, MAX_OUT)
     if kind == "joblib-zfile":
-        # joblib's own container: 'ZF' then a decimal length then a
-        # zlib stream.
         rest = data[2:]
         i = 0
         while i < len(rest) and rest[i:i + 1].isdigit():
@@ -60,22 +58,24 @@ def _inflate(data: bytes, kind: str) -> bytes:
     return b""
 
 
-def analyse(data: bytes, *, path: str, location: str = "") -> list:
+def analyse(data: bytes, *, path: str, location: str = "", extra=None,
+            strict: bool = False) -> list:
     kind = compression_of(data)
     if not kind:
-        return pickles.analyse(data, path=path, location=location)
+        return pickles.analyse(data, path=path, location=location,
+                               extra=extra, strict=strict)
     try:
         body = _inflate(data, kind)
     except (OSError, zlib.error, lzma.LZMAError, ValueError) as exc:
         return [Finding(
-            rule="CKPT-004", severity=Severity.LOW, path=path,
+            rule="CKPT-004", severity=sev("CKPT-004"), path=path,
             location=location,
             message=f"{kind} container did not decompress: {exc}")]
     if not body:
         return [Finding(
-            rule="CKPT-004", severity=Severity.LOW, path=path,
+            rule="CKPT-004", severity=sev("CKPT-004"), path=path,
             location=location,
             message=f"{kind} container decompressed to nothing")]
     return pickles.analyse(
-        body, path=path,
-        location=f"{location} ({kind})".strip())
+        body, path=path, location=f"{location} ({kind})".strip(),
+        extra=extra, strict=strict)

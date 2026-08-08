@@ -5,17 +5,6 @@ files beside it. So the analysis is: open the zip without extracting
 anything, find the members that matter, and run the right analyser over
 each -- as a stream, because a storage member is the size of the model.
 
-Two things that are not obvious:
-
-- **A member's name is attacker-controlled.** An absolute path or a
-  `..` segment in a zip is a classic extraction bug, and some loaders
-  do extract. Reported whether or not the loader here would be
-  affected, because this tool only reads and the loader downstream is
-  somebody else's.
-- **An archive can contain an archive.** A `.pt` with a nested zip
-  inside holding the real pickle is what you build if you know a
-  scanner looks one level deep.
-
 Rules:
   CKPT-010  a pickle inside a nested archive
   CKPT-012  a zip member with an absolute or traversing path
@@ -33,8 +22,6 @@ from ckptscan.registry import default_severity as sev
 
 PICKLE_NAMES = {"data.pkl", "archive/data.pkl", "constants.pkl"}
 
-#: A member that has to be read whole -- an npy header, a nested
-#: archive -- is capped here. Streamed members have no cap.
 MAX_WHOLE_MEMBER = 256 * 1024 * 1024
 MAX_RATIO = 200
 HEAD = 4096
@@ -55,8 +42,8 @@ def _open(data):
     return zipfile.ZipFile(data)
 
 
-def analyse(data, *, path: str, depth: int = 0,
-            prefix: str = "") -> list:
+def analyse(data, *, path: str, depth: int = 0, prefix: str = "",
+            extra=None, strict: bool = False) -> list:
     out: list = []
     try:
         zf = _open(data)
@@ -99,11 +86,10 @@ def analyse(data, *, path: str, depth: int = 0,
                 inner = detect.sniff(head, name=name)
 
                 if _is_pickleish(name, head):
-                    # Streamed: a storage member is model-sized and a
-                    # payload is in the first kilobyte of it.
                     member = _Rewound(head, fh)
-                    out.extend(pickles.analyse(member, path=path,
-                                               location=where))
+                    out.extend(pickles.analyse(
+                        member, path=path, location=where,
+                        extra=extra, strict=strict))
                     continue
 
                 if info.file_size > MAX_WHOLE_MEMBER:
@@ -121,7 +107,7 @@ def analyse(data, *, path: str, depth: int = 0,
                 if inner == detect.NPY:
                     out.extend(numpy_arrays.analyse(
                         head + fh.read(MAX_WHOLE_MEMBER), path=path,
-                        location=where))
+                        location=where, extra=extra, strict=strict))
                 elif inner in (detect.ZIP, detect.NPZ):
                     if depth >= 3:
                         out.append(Finding(
@@ -132,7 +118,8 @@ def analyse(data, *, path: str, depth: int = 0,
                         continue
                     body = head + fh.read(MAX_WHOLE_MEMBER)
                     nested = analyse(body, path=path, depth=depth + 1,
-                                     prefix=f"{where}!")
+                                     prefix=f"{where}!", extra=extra,
+                                     strict=strict)
                     if nested:
                         out.append(Finding(
                             rule="CKPT-010", severity=sev("CKPT-010"),

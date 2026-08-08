@@ -21,7 +21,8 @@ import ast
 import struct
 
 from ckptscan.analysers import pickles
-from ckptscan.findings import Finding, Severity
+from ckptscan.findings import Finding
+from ckptscan.registry import default_severity as sev
 
 
 class HeaderError(Exception):
@@ -62,19 +63,20 @@ def _is_object_dtype(descr) -> bool:
     return False
 
 
-def analyse(data: bytes, *, path: str, location: str = "") -> list:
+def analyse(data: bytes, *, path: str, location: str = "", extra=None,
+            strict: bool = False) -> list:
     try:
         header, offset = read_header(data)
     except HeaderError as exc:
         return [Finding(
-            rule="CKPT-004", severity=Severity.LOW, path=path,
+            rule="CKPT-004", severity=sev("CKPT-004"), path=path,
             location=location, message=str(exc))]
 
     if not _is_object_dtype(header.get("descr")):
         return []
 
     out = [Finding(
-        rule="CKPT-005", severity=Severity.HIGH, path=path,
+        rule="CKPT-005", severity=sev("CKPT-005"), path=path,
         location=location,
         message=("object-dtype array: the contents are a pickle, and "
                  "`numpy.load(..., allow_pickle=True)` executes it. "
@@ -86,5 +88,6 @@ def analyse(data: bytes, *, path: str, location: str = "") -> list:
     # which is a different conversation with whoever shipped it.
     out.extend(pickles.analyse(
         data[offset:], path=path,
-        location=f"{location} object payload".strip()))
+        location=f"{location} object payload".strip(),
+        extra=extra, strict=strict))
     return out

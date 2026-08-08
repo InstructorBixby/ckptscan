@@ -7,9 +7,7 @@ analysing the file as a single stream reads the magic number and
 nothing else -- which looks perfectly clean and misses the entire
 payload.
 
-So: parse a stream, note where it ended, seek there, parse again. The
-seeking is why this takes a file object; the old version sliced the
-bytes, which meant holding the whole file.
+So: parse a stream, note where it ended, seek there, parse again.
 """
 from __future__ import annotations
 
@@ -47,7 +45,8 @@ def streams(fh) -> list:
     return out
 
 
-def analyse(data, *, path: str, location: str = "") -> list:
+def analyse(data, *, path: str, location: str = "", extra=None,
+            strict: bool = False) -> list:
     fh = io.BytesIO(data) if isinstance(data, (bytes, bytearray)) \
         else data
     fh.seek(0)
@@ -63,7 +62,8 @@ def analyse(data, *, path: str, location: str = "") -> list:
         where = f"{location}stream {index} @{offset}" if location \
             else f"stream {index} @{offset}"
         out.extend(pickles.from_stream(stream, path=path,
-                                       location=where))
+                                       location=where, extra=extra,
+                                       strict=strict))
     return out
 
 
