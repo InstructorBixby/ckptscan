@@ -2,6 +2,55 @@
 
 Keep a Changelog format, semver versions.
 
+## [1.1.0]
+
+A month of pointing this at everything I own produced no true
+positives and a great many false ones. A scanner that fires on
+legitimate files gets switched off, and the person switching it
+off is me, so this release is almost entirely about that.
+
+### Fixed
+- `numpy._core.multiarray._reconstruct`. numpy moved the module
+  path; the old one was allowlisted and the new one was not, so
+  every checkpoint built against a current numpy produced a
+  finding. I looked at it on five separate files and talked
+  myself out of it four times before noticing it was one name.
+
+### Added
+- Fourteen allowlist entries, each from a false positive on a
+  file of my own:
+  `torch._tensor._rebuild_from_type_v2`, the tensor-subclass
+  rebuilders, `torch.nn.parameter.Parameter`, the pandas block and
+  manager constructors, `sklearn.tree._tree.Tree`,
+  `scipy.sparse._csr.csr_matrix`, `datetime`, `pathlib` path
+  objects and `TrainingArguments`.
+- `policy.ALLOW_SOURCES`: every entry records where it came from,
+  `core` or the issue, so a wrong one can be traced to the
+  reasoning.
+- `[allow]` in `ckptscan.toml` is now honoured by the scanners, so
+  a project's own classes stop being a finding four hundred times.
+  A local entry can never silence a *dangerous* call.
+- `--strict`: raises unrecognised calls to high, ignores `[allow]`
+  from the config, and reports what the shipped allowlist waved
+  through as `CKPT-020` (info) with the entry's source. For a
+  one-off review of a file from a source you do not trust; the
+  docs say plainly not to put it in CI.
+- `docs/allowlist.md`: the policy, the four shapes the reports
+  took, and the attacker-control question that settles an
+  argument.
+
+### Changed
+- **`torch.storage._load_from_bytes` is now explicitly
+  dangerous.** Somebody sent a patch allowlisting it: it is in the
+  torch namespace, it has a leading underscore, and it appears in
+  legitimate files. It calls `torch.load` on the bytes it is
+  given, so allowlisting it would allowlist arbitrary execution
+  behind a name that reads like a storage helper. The same applies
+  to `torch.serialization.load`, `torch.jit.load` and
+  `torch.hub.load_state_dict_from_url`.
+- `functools.partial`, `functools.reduce` and `operator.call` are
+  on the dangerous list as indirection.
+
 ## [1.0.0]
 
 No new detection. The rule ids, the JSON schema, the exit codes
