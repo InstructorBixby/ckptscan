@@ -11,8 +11,9 @@ from __future__ import annotations
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 
-from ckptscan.scanner import candidates, scan_file
+from ckptscan.scanner import Posture, candidates, scan_file
 
 
 def default_jobs() -> int:
@@ -28,15 +29,22 @@ def run(args) -> int:
         print(f"ckptscan: {exc}", file=sys.stderr)
         return 2
 
+    posture = Posture.from_config(args.config_obj,
+                                  strict=args.strict)
+    if args.strict and posture.extra:
+        print("ckptscan: --strict, so [allow] in the config is "
+              "ignored", file=sys.stderr)
+    work = partial(scan_file, posture=posture)
+
     jobs = args.jobs if args.jobs is not None else default_jobs()
     findings = []
     try:
         if jobs <= 1 or len(targets) <= 1:
             for target in targets:
-                findings.extend(scan_file(target))
+                findings.extend(work(target))
         else:
             with ThreadPoolExecutor(max_workers=jobs) as pool:
-                for result in pool.map(scan_file, targets):
+                for result in pool.map(work, targets):
                     findings.extend(result)
     except OSError as exc:
         print(f"ckptscan: {exc}", file=sys.stderr)
@@ -53,4 +61,9 @@ def add_parser(sub) -> None:
     p.add_argument("--jobs", type=int, default=None, metavar="N",
                    help=f"parallel file scans "
                         f"(default: {default_jobs()}, 1 to disable)")
+    p.add_argument("--strict", action="store_true",
+                   help="raise unrecognised calls to high, ignore "
+                        "[allow] from the config, and report what the "
+                        "shipped allowlist waved through. For a "
+                        "one-off review, not for a gate.")
     p.set_defaults(fn=run)
