@@ -38,6 +38,7 @@ dev = ["pytest", "pytest-cov", "ruff", "mypy"]
 keras = ["h5py"]
 onnx = ["onnx"]
 all = ["h5py", "onnx"]
+docs = ["mkdocs-material", "mkdocstrings[python]"]
 [project.scripts]
 ckptscan = "ckptscan.commands.main:main"
 ckptscan-mkcorpus = "ckptscan.commands.mkcorpus:main"

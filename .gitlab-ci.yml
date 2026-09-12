@@ -2,6 +2,7 @@
 # running the suite first and then wonder why an old flag is gone.
 stages:
   - test
+  - docs
   - maintenance
 
 variables:
@@ -59,6 +60,37 @@ corpus:
     expire_in: 2 weeks
     paths:
       - ckptscan.sarif
+
+docs:
+  extends: .uv
+  stage: docs
+  script:
+    - uv pip install --system -e ".[docs]"
+    # The rule reference is generated and the nav links to it, so a
+    # stale one publishes a page that disagrees with the tool.
+    - python scripts/regen_rules.py --check
+    - mkdocs build --strict --site-dir public
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH
+
+pages:
+  # Same build, but the one the instance actually serves. Split so a
+  # branch gets the --strict check without overwriting the pages the
+  # default branch published.
+  extends: .uv
+  stage: docs
+  script:
+    - uv pip install --system -e ".[docs]"
+    - python scripts/regen_rules.py --check
+    - mkdocs build --strict --site-dir public
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 freshness:
   # No bot is going to open a merge request here. A scheduled pipeline

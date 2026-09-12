@@ -1,0 +1,50 @@
+site_name: ckptscan
+site_description: Scan model checkpoints for code that executes at load
+repo_url: https://git.c01n31.net/c01n31pan1c/ckptscan
+edit_uri: -/edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle: {icon: material/weather-night, name: dark mode}
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle: {icon: material/weather-sunny, name: light mode}
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.top
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc: {permalink: true}
+  - pymdownx.highlight
+  - pymdownx.superfences
+
+nav:
+  - Overview: index.md
+  - How I install it: install.md
+  - Rules: rules.md
+  - Using it:
+    - Configuring: config.md
+    - Scanning call sites: loaders.md
+    - Verifying a manifest: manifest.md
+    - Performance: performance.md
+  - Formats:
+    - What it reads: formats.md
+    - Keras: keras.md
+    - The weights_only default: weights-only.md
+  - Judgement:
+    - The allowlist: allowlist.md
+    - What I looked at first: prior-art.md
+    - Taxonomy map: taxonomy-map.md
+    - The corpus: corpus.md
+    - Triage: triage.md
+  - Notes to self:
+    - What I cannot break: stability.md
+    - How this breaks: failure-modes.md
+    - What it drags in: dependencies.md
+    - Working on this: working-on-this.md
