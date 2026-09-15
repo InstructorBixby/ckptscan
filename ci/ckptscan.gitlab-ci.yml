@@ -1,0 +1,46 @@
+# A job template, so the other repositories with weights in them get
+# the same check without me copying nine lines of YAML and then fixing
+# eight of them. Include it and override what needs overriding:
+#
+#   include:
+#     - project: panic/ckptscan
+#       ref: v1.2.0
+#       file: /ci/ckptscan.gitlab-ci.yml
+#
+#   ckptscan:
+#     variables:
+#       CKPTSCAN_PATH: weights
+#       CKPTSCAN_FAIL_ON: high
+#
+# The ref is pinned on purpose. A rule's default severity can move in
+# a minor release -- docs/stability.md -- so an unpinned include turns
+# a recalibration into a red pipeline I did not ask for, and the thing
+# I do about a red pipeline I did not ask for is delete the job.
+variables:
+  CKPTSCAN_VERSION: "1.2.0"
+  CKPTSCAN_PATH: "."
+  CKPTSCAN_FAIL_ON: "high"
+  CKPTSCAN_FORMAT: "sarif"
+  CKPTSCAN_OUTPUT: "ckptscan.sarif"
+  CKPTSCAN_CONFIG: ""
+
+ckptscan:
+  stage: test
+  image: python:3.12-slim
+  before_script:
+    # No index to install from: pip clones the tag off the instance.
+    - pip install "ckptscan[all] @ git+https://git.c01n31.net/c01n31pan1c/ckptscan@v$CKPTSCAN_VERSION"
+  script:
+    - |
+      args=("$CKPTSCAN_PATH" --fail-on "$CKPTSCAN_FAIL_ON")
+      args+=(--format "$CKPTSCAN_FORMAT" --output "$CKPTSCAN_OUTPUT")
+      [ -n "$CKPTSCAN_CONFIG" ] && args+=(--config "$CKPTSCAN_CONFIG")
+      ckptscan "${args[@]}"
+  artifacts:
+    # when: always, because the job fails on findings and without it
+    # the report is thrown away with the container. A check that
+    # swallows its own evidence is worse than no check.
+    when: always
+    expire_in: 1 month
+    paths:
+      - $CKPTSCAN_OUTPUT

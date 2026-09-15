@@ -29,6 +29,7 @@ nav:
   - How I install it: install.md
   - Rules: rules.md
   - Using it:
+    - In a pipeline: ci.md
     - Configuring: config.md
     - Scanning call sites: loaders.md
     - Verifying a manifest: manifest.md

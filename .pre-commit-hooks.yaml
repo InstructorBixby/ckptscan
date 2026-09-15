@@ -1,0 +1,20 @@
+# `scan` and `loaders` are separate hooks because they look at
+# different things: one at checkpoints, one at source.
+#
+# Neither is the real check. A hook is skipped by --no-verify, which I
+# use more than I would like to admit; docs/ci.md has the one that
+# cannot be skipped.
+- id: ckptscan
+  name: ckptscan
+  description: scan checkpoint files for load-time code execution
+  entry: ckptscan
+  language: python
+  types_or: [binary]
+  files: '\.(pt|pth|bin|ckpt|pkl|pickle|joblib|npy|npz|h5|keras|safetensors|onnx|gguf)$'
+
+- id: ckptscan-loaders
+  name: ckptscan loaders
+  description: find load calls that turn the restricted unpickler off
+  entry: ckptscan loaders
+  language: python
+  types: [python]
