@@ -2,6 +2,37 @@
 
 Keep a Changelog format, semver versions.
 
+## [1.2.0]
+
+Plumbing. No change to detection.
+
+### Added
+- `scripts/release.sh`: refuses to tag from a dirty tree, or when
+  `pyproject.toml`, `__init__` and the changelog disagree about
+  the version. I have tagged, pushed, and then found the version
+  still said the old number. Twice.
+- **The release script runs the corpus.** A version that cannot
+  detect its own unsafe samples, or that fires on its own clean
+  ones, does not get a tag. This has stopped me once, on a
+  false-positive fix that quietly broke a detection.
+- `scripts/image.sh` and a `Containerfile`: a local podman image
+  with the format extras installed, running as a non-root user,
+  for the boxes where I do not want to argue with the system
+  Python. The build makes the image scan its own corpus through
+  the entrypoint with `--network none`, which is a cheap way to
+  keep the static-analysis claim honest.
+- `ci/ckptscan.gitlab-ci.yml`: a job template the other
+  repositories with weights in them can `include:`, with the ref
+  pinned and the report kept as an artifact `when: always` -- a
+  check that swallows its own evidence is worse than no check.
+- `.pre-commit-hooks.yaml`, with `scan` and `loaders` as separate
+  hooks.
+- The docs build as a site, with `--strict` and with the generated
+  rule reference checked for staleness first, so I can read them
+  without a checkout.
+- `docs/dependencies.md`, `docs/ci.md`, including what to set
+  `--fail-on` to and in what order to tighten it.
+
 ## [1.1.0]
 
 A month of pointing this at everything I own produced no true
