@@ -15,9 +15,17 @@ The mapping decisions worth knowing about:
 - Every rule in the registry is emitted in `rules`, whether or not it
   fired, because that is what makes the help text available in a
   viewer.
+- Each result carries a `partialFingerprints` entry. Without one, a
+  viewer identifies a result by its location, and because these results
+  have no line number every finding in a file collapses onto the same
+  identity: re-scanning a directory closed and reopened the same alert,
+  and two findings in one file showed as one. The fingerprint is the
+  rule, the artifact and the internal location, which is exactly the
+  identity a human would use.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -53,6 +61,19 @@ def _uri(path: str) -> str:
         return p.as_posix()
 
 
+def _fingerprint(finding) -> str:
+    """Stable identity for a finding across runs.
+
+    Deliberately NOT including the message or the byte offset: a
+    message is reworded between releases and an offset moves when a
+    file is rebuilt, and either would make a viewer close an alert and
+    open a new one for the same thing.
+    """
+    parts = [finding.rule, _uri(finding.path), finding.location]
+    key = "\x00".join(parts).encode("utf-8")
+    return hashlib.sha256(key).hexdigest()[:32]
+
+
 def _rule_object(rule) -> dict:
     return {
         "id": rule.id,
@@ -81,6 +102,8 @@ def _result(finding) -> dict:
                 "artifactLocation": {"uri": _uri(finding.path)},
             },
         }],
+        "partialFingerprints": {
+            "ckptscanFinding/v1": _fingerprint(finding)},
         "properties": {"severity": finding.severity},
     }
     if finding.location:
