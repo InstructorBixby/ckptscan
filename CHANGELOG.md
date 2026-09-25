@@ -2,6 +2,23 @@
 
 Keep a Changelog format, semver versions.
 
+## [1.2.1]
+
+### Fixed
+- SARIF results carried no `partialFingerprints`. Because these
+  results deliberately have no line number -- a fabricated line in
+  a binary is worse than none -- a viewer was identifying them by
+  location alone, so every finding in one file collapsed onto a
+  single identity: two findings showed as one, and re-scanning a
+  directory closed and reopened the same alert.
+
+  The fingerprint is the rule, the artifact and the internal
+  location, which is the identity a human would use. It
+  deliberately excludes the message and the byte offset, since a
+  message gets reworded between releases and an offset moves when
+  a file is rebuilt, and either would make a viewer close an alert
+  and open a new one for the same thing.
+
 ## [1.2.0]
 
 Plumbing. No change to detection.
