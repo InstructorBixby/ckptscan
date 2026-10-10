@@ -2,6 +2,19 @@
 
 Keep a Changelog format, semver versions.
 
+## [1.3.0]
+
+### Added
+- `docs/summary.md`: the three things to do instead of running a
+  scanner, in order, and where scanning actually fits. A tool's
+  own documentation is the wrong place to argue that the tool is
+  the answer, and the mistake I see most often is a scanner in CI,
+  a green build, and `weights_only=False` three directories away.
+
+### Changed
+- `docs/index.md` leads with the three documents worth reading
+  before installing anything.
+
 ## [1.2.1]
 
 ### Fixed
